@@ -1,0 +1,1 @@
+{"ip": "127.0.0.1", "transport": "tcp", "signature_scheme": "hmac-sha256", "key": "", "shell_port": 57431, "iopub_port": 57432, "stdin_port": 57433, "control_port": 57434, "hb_port": 57435}

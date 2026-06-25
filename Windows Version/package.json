@@ -1,0 +1,70 @@
+{
+  "name": "navrang-notebook",
+  "version": "1.0.0",
+  "description": "Navrang Pustika — Offline AI Notebook Platform for Windows",
+  "main": "electron/main.js",
+  "author": "Navrang Team",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build-frontend": "cd ../frontend && npm run build",
+    "pack-backend": "cd ../backend && pyinstaller backend.spec",
+    "copy-frontend": "node -e \"const fs=require('fs');const path=require('path');const src=path.resolve('../frontend/dist');const dest=path.resolve('dist');fs.rmSync(dest,{recursive:true,force:true});fs.cpSync(src,dest,{recursive:true});\"",
+    "dist": "electron-builder --win",
+    "full-build": "npm run build-frontend && npm run pack-backend && npm run copy-frontend && npm run dist",
+    "build": "npm run full-build"
+  },
+  "build": {
+    "appId": "com.navrang.notebook",
+    "productName": "Navrang Notebook",
+    "copyright": "Copyright © 2024 Navrang Team",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "assets"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/backend_dist",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Navrang Notebook",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "license": "LICENSE.txt",
+      "installerLanguages": ["English"],
+      "language": "1033"
+    },
+    "asar": true,
+    "compression": "maximum"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  }
+}
