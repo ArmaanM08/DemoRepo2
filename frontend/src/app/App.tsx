@@ -126,6 +126,9 @@ function AppContent() {
   const [notebookActions, setNotebookActions] = useState<any>({});
   const [closedNotebooks, setClosedNotebooks] = useState<string[]>([]);
 
+  // Refs for native OS file dialogs
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   // Menu-related state
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [wrapText, setWrapText] = useState(false);
@@ -399,23 +402,42 @@ function AppContent() {
 
   const handleSaveAs = async () => {
     if (!activeNotebook) return;
-    const newPath = prompt(t('file.saveAsPrompt') || "Save as (enter filename, e.g. path/to/notebook.ipynb):", activeNotebook.id);
-    if (!newPath) return;
-    try {
-      await fetch(getBackendUrl('/api/files/create'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: newPath, type: 'notebook' })
-      });
-      await fetch(getBackendUrl('/api/notebooks/save'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: newPath, cells: activeNotebook.cells })
-      });
-      await fetchFiles();
-      await handleOpenNotebookFile(newPath, newPath.split('/').pop() || '');
-    } catch (e) {
-      console.error("Error in Save As", e);
+    // Use the File System Access API (Chromium/Firefox) for native OS save dialog
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: `${activeNotebook.name}.ipynb`,
+          types: [{
+            description: 'Jupyter Notebook',
+            accept: { 'application/json': ['.ipynb'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        const notebookJson = JSON.stringify({
+          cells: activeNotebook.cells,
+          metadata: {
+            kernelspec: { display_name: "Python 3", language: "python", name: "python3" },
+            language_info: { name: "python", version: "3.11.7" }
+          },
+          nbformat: 4,
+          nbformat_minor: 2
+        }, null, 2);
+        await writable.write(notebookJson);
+        await writable.close();
+      } catch (e: any) {
+        if (e.name !== 'AbortError') {
+          console.error("Error in Save As", e);
+        }
+      }
+    } else {
+      // Fallback: download as file
+      const blob = new Blob([JSON.stringify({ cells: activeNotebook.cells }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeNotebook.name}.ipynb`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -610,18 +632,39 @@ function AppContent() {
   };
 
   const handleOpenNotebook = async () => {
-    const promptMsg = t('file.openNotebookPrompt') || "Enter the absolute path of the notebook (.ipynb file) to open:";
-    const filePath = prompt(promptMsg);
-    if (!filePath || !filePath.trim()) return;
+    fileInputRef.current?.click();
+  };
 
-    const trimmedPath = filePath.trim();
-    if (!trimmedPath.toLowerCase().endsWith('.ipynb')) {
-      alert(t('file.invalidExtension') || "Invalid file. Please open a Jupyter Notebook (.ipynb) file.");
-      return;
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset the input so the same file can be picked again
+    e.target.value = '';
+
+    try {
+      const text = await file.text();
+      const nbData = JSON.parse(text);
+
+      // Import the notebook into the workspace so the backend kernel can access it
+      const baseName = file.name.replace(/\.ipynb$/i, '') || 'imported';
+      const importPath = `imported_${baseName}_${Date.now().toString().slice(-6)}.ipynb`;
+
+      await fetch(getBackendUrl('/api/files/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: importPath, type: 'notebook' })
+      });
+      await fetch(getBackendUrl('/api/notebooks/save'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: importPath, cells: nbData.cells || [] })
+      });
+      await fetchFiles();
+      await handleOpenNotebookFile(importPath, file.name);
+    } catch (e) {
+      console.error("Error opening notebook file", e);
+      alert("Failed to open notebook. Make sure it's a valid .ipynb file.");
     }
-
-    const name = trimmedPath.split(/[/\\]/).pop() || trimmedPath;
-    await handleOpenNotebookFile(trimmedPath, name);
   };
 
 
@@ -893,6 +936,15 @@ function AppContent() {
       className={`${theme} h-screen flex flex-col overflow-hidden`}
       style={{ background: isDark ? '#0d1117' : '#ffffff', color: isDark ? '#e6edf3' : '#1f2328' }}
     >
+      {/* Hidden file input for native OS file picker */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".ipynb"
+        onChange={handleFileSelected}
+        style={{ display: 'none' }}
+      />
+
       {/* Menu Bar */}
       <MenuBar
         theme={theme}
@@ -1108,6 +1160,7 @@ function AppContent() {
           t={t}
         />
       )}
+
     </div>
   );
 }
